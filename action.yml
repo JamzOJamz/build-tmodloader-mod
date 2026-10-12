@@ -73,8 +73,9 @@ runs:
         # Make native libs (FNA3D etc.) resolvable on Linux
         sed -i 's|<Exec Command="dotnet |<Exec Command="LD_LIBRARY_PATH=\&quot;$(tMLLibraryPath)/Native/Linux\&quot; dotnet |' "$TML_DIR/tMLMod.targets"
 
-        # Mod csprojs import ..\tModLoader.targets, which resolves to the workspace's parent
-        cat > "$(dirname "$GITHUB_WORKSPACE")/tModLoader.targets" <<EOF
+        # Mod csprojs import ..\tModLoader.targets, resolved relative to the staged ModSources folder
+        mkdir -p "$RUNNER_TEMP/ModSources"
+        cat > "$RUNNER_TEMP/ModSources/tModLoader.targets" <<EOF
         <Project ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
           <Import Project="$TML_DIR/tMLMod.targets" />
         </Project>
@@ -89,7 +90,7 @@ runs:
         ExtraBuildModFlags: -tmlsavedirectory ${{ runner.temp }}/tmlsave
       run: |
         if [ -n "$PROJECT" ]; then
-          proj="$GITHUB_WORKSPACE/$PROJECT"
+          rel="$PROJECT"
         else
           shopt -s nullglob
           files=("$GITHUB_WORKSPACE"/*.csproj)
@@ -97,10 +98,17 @@ runs:
             echo "::error::Expected exactly one .csproj in the repo root, found ${#files[@]}. Set the 'project' input."
             exit 1
           fi
-          proj="${files[0]}"
+          rel="$(basename "${files[0]}")"
         fi
-        echo "artifact=$(basename "$proj" .csproj)-tmod" >> "$GITHUB_OUTPUT"
-        dotnet build "$proj" -c "$CONFIGURATION" --nologo
+        name="$(basename "$rel" .csproj)"
+
+        # tML names the mod after the folder containing the csproj, so stage the repo under the mod's name
+        stage="$RUNNER_TEMP/ModSources/$name"
+        rm -rf "$stage"
+        cp -a "$GITHUB_WORKSPACE" "$stage"
+
+        echo "artifact=$name-tmod" >> "$GITHUB_OUTPUT"
+        dotnet build "$stage/$rel" -c "$CONFIGURATION" --nologo
 
     - name: Upload .tmod
       if: inputs.upload-artifact == 'true'
