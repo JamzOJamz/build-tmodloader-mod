@@ -32,7 +32,7 @@ By default, it builds the single `.csproj` in the repo root against the latest s
 | --- | --- | --- |
 | `project` | Path to the mod's `.csproj`, relative to the repo root | The single `.csproj` in the repo root |
 | `tml-version` | tModLoader release tag to build against | Latest stable release |
-| `dotnet-version` | .NET SDK version(s) to install, one per line | `8.0.x` and `10.0.x` |
+| `dotnet-version` | .NET SDK version(s) to install, one per line | `8.0.x` |
 | `configuration` | Build configuration | `Release` |
 | `upload-artifact` | Upload the built `.tmod` as a workflow artifact | `true` |
 | `artifact-name` | Name of the uploaded artifact | `<csproj name>-tmod` |
