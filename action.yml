@@ -1,0 +1,113 @@
+name: Build tModLoader Mod
+description: Build a tModLoader mod and upload the .tmod as an artifact.
+author: JamzOJamz
+branding:
+  icon: package
+  color: purple
+
+inputs:
+  project:
+    description: Path to the mod's .csproj, relative to the repo root. Defaults to the single .csproj in the repo root.
+    default: ""
+  tml-version:
+    description: tModLoader release tag to build against. Defaults to the latest stable release.
+    default: ""
+  dotnet-version:
+    description: .NET SDK version(s) to install, one per line.
+    default: |
+      8.0.x
+      10.0.x
+  configuration:
+    description: Build configuration.
+    default: Release
+  upload-artifact:
+    description: Upload the built .tmod as a workflow artifact.
+    default: "true"
+  artifact-name:
+    description: Name of the uploaded artifact. Defaults to <csproj name>-tmod.
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-dotnet@v6
+      with:
+        dotnet-version: ${{ inputs.dotnet-version }}
+
+    - name: Resolve tModLoader version
+      id: tml
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        PINNED: ${{ inputs.tml-version }}
+      run: |
+        tag="$PINNED"
+        if [ -z "$tag" ]; then
+          tag=$(gh release list -R tModLoader/tModLoader --exclude-pre-releases --limit 1 --json tagName -q '.[0].tagName')
+        fi
+        echo "Using tModLoader $tag"
+        echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+    - name: Cache tModLoader
+      id: tml-cache
+      uses: actions/cache@v6
+      with:
+        path: ${{ runner.temp }}/tml
+        key: tml-${{ steps.tml.outputs.tag }}
+
+    - name: Download tModLoader
+      if: steps.tml-cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        TAG: ${{ steps.tml.outputs.tag }}
+        TML_DIR: ${{ runner.temp }}/tml
+      run: |
+        mkdir -p "$TML_DIR"
+        gh release download "$TAG" -R tModLoader/tModLoader -p tModLoader.zip -D "$TML_DIR"
+        cd "$TML_DIR" && unzip -q tModLoader.zip && rm tModLoader.zip
+
+    - name: Configure tModLoader
+      shell: bash
+      env:
+        TML_DIR: ${{ runner.temp }}/tml
+      run: |
+        # Make native libs (FNA3D etc.) resolvable on Linux
+        sed -i 's|<Exec Command="dotnet |<Exec Command="LD_LIBRARY_PATH=\&quot;$(tMLLibraryPath)/Native/Linux\&quot; dotnet |' "$TML_DIR/tMLMod.targets"
+
+        # Mod csprojs import ..\tModLoader.targets, which resolves to the workspace's parent
+        cat > "$(dirname "$GITHUB_WORKSPACE")/tModLoader.targets" <<EOF
+        <Project ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+          <Import Project="$TML_DIR/tMLMod.targets" />
+        </Project>
+        EOF
+
+    - name: Build mod
+      id: build
+      shell: bash
+      env:
+        PROJECT: ${{ inputs.project }}
+        CONFIGURATION: ${{ inputs.configuration }}
+        ExtraBuildModFlags: -tmlsavedirectory ${{ runner.temp }}/tmlsave
+      run: |
+        if [ -n "$PROJECT" ]; then
+          proj="$GITHUB_WORKSPACE/$PROJECT"
+        else
+          shopt -s nullglob
+          files=("$GITHUB_WORKSPACE"/*.csproj)
+          if [ "${#files[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one .csproj in the repo root, found ${#files[@]}. Set the 'project' input."
+            exit 1
+          fi
+          proj="${files[0]}"
+        fi
+        echo "artifact=$(basename "$proj" .csproj)-tmod" >> "$GITHUB_OUTPUT"
+        dotnet build "$proj" -c "$CONFIGURATION" --nologo
+
+    - name: Upload .tmod
+      if: inputs.upload-artifact == 'true'
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ inputs.artifact-name || steps.build.outputs.artifact }}
+        path: ${{ runner.temp }}/tmlsave/Mods/*.tmod
+        if-no-files-found: error
