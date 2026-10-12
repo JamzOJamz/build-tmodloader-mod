@@ -14,9 +14,7 @@ inputs:
     default: ""
   dotnet-version:
     description: .NET SDK version(s) to install, one per line.
-    default: |
-      8.0.x
-      10.0.x
+    default: 8.0.x
   configuration:
     description: Build configuration.
     default: Release
