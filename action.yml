@@ -3,7 +3,7 @@ description: Build a tModLoader mod and upload the .tmod as an artifact.
 author: JamzOJamz
 branding:
   icon: package
-  color: purple
+  color: green
 
 inputs:
   project:
